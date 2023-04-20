@@ -6,7 +6,7 @@ pptx2mp4 converts a `.pptx` file to a video, and read out speaker's notes along 
 
 * To get started, clone this repo
 ```
-git clone https://github.com/chaonan99/ppt_presenter.git
+git clone https://github.com/mvillegas13/pptx2mp4
 cd pptx2mp4
 ```
 * Install required packages
