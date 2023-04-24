@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3.10
 # -*- coding: utf-8 -*-
 
 
@@ -11,15 +11,43 @@ from subprocess import call
 from PIL import Image
 
 from pdf2image import convert_from_path
-from pptx import Presentation
 from gtts import gTTS
+from pptx import Presentation
+from TTS.utils.manage import ModelManager
+from TTS.utils.synthesizer import Synthesizer
+import site
 
 
 __author__ = ['chaonan99','Mathieu']
 
-def ppt_presenter(pptx_path, language, output_path):
+def ppt_presenter(pptx_path, language, use_gtts, output_path):
+    if use_gtts:
+        print("Using gtts\n")
+    else:
+        print("Using TTS\n")
+        location = site.getsitepackages()[0]
+        path = location + "/TTS/.models.json"
+        model_manager = ModelManager(path)
+        if language == "fr":
+            model_path, config_path, model_item = model_manager.download_model("tts_models/fr/css10/vits")
+            syn = Synthesizer(
+                tts_checkpoint=model_path,
+                tts_config_path=config_path,
+
+            )
+        else:
+            model_path, config_path, model_item = model_manager.download_model("tts_models/en/ljspeech/tacotron2-DDC")
+            voc_path, voc_config_path, _ = model_manager.download_model(model_item["default_vocoder"])
+
+            syn = Synthesizer(
+                tts_checkpoint=model_path,
+                tts_config_path=config_path,
+                vocoder_checkpoint=voc_path,
+                vocoder_config=voc_config_path
+            )
+
+
     with tempfile.TemporaryDirectory(dir=os.getcwd()) as temp_path:
-    # temp_path = str(tempfile.TemporaryDirectory(dir=os.getcwd()))
         filename = os.path.splitext(os.path.basename(pptx_path))[0]
         pdf_path = os.path.join(temp_path, filename + '.pdf')
         print('Converting pptx to pdf: ' + pdf_path + '\n')
@@ -33,14 +61,19 @@ def ppt_presenter(pptx_path, language, output_path):
         for i, (slide, image) in enumerate(zip(prs.slides, images_from_path)):
             print('Processing {}/{}\n'.format(i + 1, count))
             if slide.has_notes_slide:
-                notes = slide.notes_slide.notes_text_frame.text
-                tts = gTTS(text=notes, lang=language)
                 image_path = os.path.join(temp_path, 'frame_{}.jpg'.format(i))
-                audio_path = os.path.join(temp_path, 'frame_{}.mp3'.format(i))
-
+               
                 image.save(image_path)
                 make_jpeg_even(image_path)
-                tts.save(audio_path)
+                notes = slide.notes_slide.notes_text_frame.text
+                if use_gtts:
+                    audio_path = os.path.join(temp_path, 'frame_{}.mp3'.format(i))
+                    tts = gTTS(text=notes, lang=language)
+                    tts.save(audio_path)
+                else:
+                    audio_path = os.path.join(temp_path, 'frame_{}.wav'.format(i))
+                    outputs = syn.tts(notes)
+                    syn.save_wav(outputs, audio_path)
 
                 ffmpeg_call(image_path, audio_path, temp_path, i)
         print('Concatenating videos...\n')
@@ -95,6 +128,7 @@ def main():
     parser.add_argument('-i', '--input', help='input pptx path')
     parser.add_argument('-l', '--lang', help='text language (fr, en, etc...)')
     parser.add_argument('-o', '--output', help='output path')
+    parser.add_argument('-t', '--tts', help='Text to speech engine to use (gtts or tts). Default is tts (CoquiTTS)', required=False, default='tts')
     args = parser.parse_args()
 
     error = False
@@ -108,7 +142,7 @@ def main():
         print('Error: missing software. Please install required software and try again.\n')
         exit(1)
 
-    ppt_presenter(args.input, args.lang, args.output)
+    ppt_presenter(args.input, args.lang, args.tts == 'gtts', args.output)
 
 
 if __name__ == '__main__':
